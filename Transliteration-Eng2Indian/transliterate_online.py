@@ -1,50 +1,63 @@
-import requests, json, sys
+import requests
+import json
+import sys
 
-g_api = 'https://inputtools.google.com/request?text=%s&itc=%s-t-i0-und&num=%d'
-qp_api = 'http://xlit.quillpad.in/quillpad_backend2/processWordJSON?lang=%s&inString=%s'
+g_api = 'https://inputtools.google.com/request?text={}&itc={}-t-i0-und&num={}'
+qp_api = 'http://xlit.quillpad.in/quillpad_backend2/processWordJSON?lang={}&inString={}'
 
 lang2code = {
-	'hindi': 'hi',
-	'tamil': 'ta',
-	'telugu': 'te',
-	'marathi': 'mr',
-	'punjabi': 'pa',
-	'bengali': 'bn',
-	'gujarati': 'gu',
-	'kannada': 'kn',
-	'malayalam': 'ml',
-	'nepali': 'ne'
+    "hindi": "hi", "tamil": "ta", "telugu": "te", "marathi": "mr",
+    "punjabi": "pa", "bengali": "bn", "gujarati": "gu", 
+    "kannada": "kn", "malayalam": "ml", "nepali": "ne"
 }
 
-
 def gtransliterate(word, lang_code, num_suggestions=10):
-	response = requests.request('GET', g_api % (word, lang_code, num_suggestions), allow_redirects=False, timeout=5)
-	r = json.loads(response.text)
-	if 'SUCCESS' not in r[0] or response.status_code != 200:
-		print('Request failed with status code: %d\nERROR: %s' % (response.status_code, response.text), file=sys.stderr)
-		return []
-	return r[1][0][1]
+    url = g_api.format(word, lang_code, num_suggestions)
+    response = requests.get(url, allow_redirects=False, timeout=5)
+
+    try:
+        r = json.loads(response.text)
+        if response.status_code != 200 or r[0] != "SUCCESS":
+            print(f"Request failed with status code: {response.status_code}\nERROR: {response.text}", file=sys.stderr)
+            return []
+        return r[1][0][1]
+    except Exception as e:
+        print(f"Exception occurred: {e}", file=sys.stderr)
+        return []
 
 def qp_transliterate(word, lang):
-	response = requests.request('GET', qp_api % (lang, word), allow_redirects=False, timeout=5)
-	if 'Internal Server Error' in response.text or response.status_code != 200:
-		print('Request failed with status code: %d\nERROR: %s' % (response.status_code, response.text), file=sys.stderr)
-		return []
-	r = json.loads(response.text)
-	suggestions = r['twords'][0]['options']
-	suggestions.append(r['itrans'])
-	return suggestions
+    url = qp_api.format(lang, word)
+    response = requests.get(url, allow_redirects=False, timeout=5)
+    
+    if response.status_code != 200 or "Internal Server Error" in response.text:
+        print(f"Request failed with status code: {response.status_code}\nERROR: {response.text}", file=sys.stderr)
+        return []
+
+    try:
+        r = json.loads(response.text)
+        suggestions = r.get("twords", [{}])[0].get("options", [])
+        suggestions.append(r.get("itrans", ""))
+        return suggestions
+    except Exception as e:
+        print(f"Failed to parse response: {e}", file=sys.stderr)
+        return []
 
 def transliterate(word, lang, source):
-	if 'quill' in source:
-		return qp_transliterate(word, lang)
-	if 'google' in source:
-		return gtransliterate(word, lang2code[lang])
-	sys.exit('ERROR: Source %s not found' % source)
-	
-if __name__ == '__main__':
-	word, lang = sys.argv[1:]
-	if not word or not lang in lang2code:
-		sys.exit('USAGE: python %s <eng_word> <supported_lang>' % sys.argv[0])
-	print('QUILLPAD suggestions:\n%s\n' % transliterate(word, lang, 'quillpad'))
-	print(' GOOGLE  suggestions:\n%s\n' % transliterate(word, lang, 'google'))
+    if "quill" in source:
+        return qp_transliterate(word, lang)
+    elif "google" in source:
+        return gtransliterate(word, lang2code.get(lang, ""))
+    else:
+        sys.exit(f"ERROR: Source {source} not found")
+
+if __name__ == "__main__":
+    if len(sys.argv) < 3:
+        sys.exit(f"USAGE: python {sys.argv[0]} <eng_word> <supported_lang>")
+
+    word, lang = sys.argv[1], sys.argv[2]
+    
+    if not word or lang not in lang2code:
+        sys.exit(f"USAGE: python {sys.argv[0]} <eng_word> <supported_lang>")
+
+    print("QUILLPAD suggestions:\n{}\n".format(transliterate(word, lang, 'quillpad')))
+    print(" GOOGLE  suggestions:\n{}\n".format(transliterate(word, lang, 'google')))
